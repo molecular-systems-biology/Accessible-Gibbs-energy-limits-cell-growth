@@ -5,7 +5,7 @@ This repository contains the Python codes used to generate the figures for the m
 ----------------------
 - Python 3.8 or higher
 - Python packages: numpy, scipy, matplotlib (3.6 or higher), seaborn
-- Versions used in the study: Python 3.13.5, numpy 1.26.4, scipy 1.11.4, matplotlib 3.6.3, seaborn 0.13.2
+- Versions used in the study: Python 3.12.3, numpy 1.26.4, scipy 1.11.4, matplotlib 3.6.3, seaborn 0.13.2
 - A LaTeX installation with the packages sfmath and siunitx, and the Helvetica font.
 - The figure codes render all text with LaTeX (usetex=True). Without LaTeX they stop with an error.
 
@@ -13,7 +13,7 @@ This repository contains the Python codes used to generate the figures for the m
 ---------------
     conda create -n figures python=3.9
     conda activate figures
-    pip install numpy scipy matplotlib seaborn
+    pip install numpy==1.26.4 scipy==1.11.4 matplotlib==3.6.3 seaborn==0.13.2
 
 3. Generating Figures
 ---------------------

@@ -1,82 +1,86 @@
 """
-Figure S2: Accessible Gibbs energy limits metabolic activation in the PTS model.
+Figure S2: The growth limitation is robust to reversible kinetics and external countersubstrate concentration.
 ================================================================================
 
-This code produces panels a–d of Figure S2 from the manuscript
-"Accessible Gibbs energy at metabolic activation limits long-term cell growth".
-
-Panels a & c: Low initial ATP ([ATP]_0 = 0.1 mM), varying external substrate [S]_out
-Panels b & d: Saturating external substrate ([S]_out = 100 mM), varying initial [ATP]_0
-
-It computes:
-1. Accessible Gibbs energy (initial, steady-state, and dissipated)
-2. Proteome allocation (fractions of E_t, E_c, E_a relative to E_tot) and total enzyme cost per flux
+This code produces panels a–c of Figure S2 from the manuscript
+"Accessible Gibbs energy at metabolic activation can constrain steady-state growth".
 """
 
-from scipy.optimize import brentq
+from scipy.optimize import differential_evolution
 
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-# ============================== HELPER FUNCTIONS ==============================
+def penalized_objective (x, S_out, C_out, Q_0, w=1e12):
 
-def accessible_Gibbs_energy_hyd (ATP, Q_0): # accessible Gibbs energy of ATP hydrolysis in kJ/l (equation S.19 in manuscript)
+    S_in, I, P = 10**x
+    C_in = Q_0 - S_in
 
-    ADP = Q_0 - ATP
+    Gamma_t, Gamma_p, Gamma_c = mass_action (x, S_out, C_out, Q_0)
 
-    return RT * (Q_0 * np.log((1 + const_hyd) / Q_0) + ATP * np.log(ATP / const_hyd) + ADP * np.log(ADP)) # [kJ/l]
+    ratio = np.array([Gamma_t / K_eq_t, Gamma_p / K_eq_p, Gamma_c / K_eq_c])
+    if np.any(ratio > 1):
+        return w * (1 + np.sum(np.maximum(ratio - 1, 0)**2))
 
-def proteome (x, Q_0): # E_r / J for given metabolite concentrations
+    E = proteome (x, S_out, C_out, Q_0)
+    E_tot = np.sum(E)
 
-    Sout, I, P, ATP = x
+    penalty = 0
 
-    ADP = Q_0 - ATP
+    if S_in < 0: penalty += w * (S_in / Q_0)**2
+    if C_in < 0: penalty += w * (C_in / Q_0)**2
+    if I < 0: penalty += w * (I / 100e-3)**2
+    if P < 0: penalty += w * (P / 100e-3)**2
 
-    Et = alpha_t * (KmATPt + ATP) / ATP * (KmSt + Sout) / Sout
-    Ec = alpha_c * ((KmADPc + ADP) / ADP)**2 * (KmIc + I) / I
-    Ea = alpha_a * (KmATPa + ATP) / ATP * (KmPa + P) / P
+    if S_in > Q_0: penalty += w * (1 - S_in / Q_0)**2
 
-    return np.array([Et, Ec, Ea])
+    for enz in E:
+        if enz < 0: penalty += w * (enz / E_tot)**2
 
-def ATP_equation (ATP, Sout, Q_0): # equation S.10 in manuscript
+    return E_tot + penalty
 
-    ADP = Q_0 - ATP
+def proteome (x, S_out, C_out, Q_0):
 
-    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP)))
-    N3 = np.sqrt(BPa * (1 + KmATPa / ATP))
+    S_in, I, P = 10**x
+    C_in = Q_0 - S_in
 
-    x = (Stot - Q_0) / (N2 + N3)
+    Gamma_t, Gamma_p, Gamma_c = mass_action (x, S_out, C_out, Q_0)
 
-    I = x * N2
-    P = x * N3
+    E_t = alpha_t * ((1 + S_out / K_mS_t) * (1 + C_in / K_mC_t) + (1 + S_in / K_mS_t) * (1 + C_out / K_mC_t) - 1)\
+        /((S_out / K_mS_t) * (C_in / K_mC_t) * (1 - Gamma_t / K_eq_t))
+    E_p = alpha_p * ((1 + S_in / K_mS_p) * (1 + Pi / K_mPi_p) + (1 + I / K_mI_p) - 1)\
+        /((S_in / K_mS_p) * (Pi / K_mPi_p) * (1 - Gamma_p / K_eq_p))
+    E_c = alpha_c * ((1 + I / K_mI_c) * (1 + ADP / K_mADP_c) + (1 + P / K_mP_c) * (1 + ATP / K_mATP_c) - 1)\
+        /((I / K_mI_c) * (ADP / K_mADP_c) * (1 - Gamma_c / K_eq_c))
+    E_a = alpha_a * (1 + K_mP_a / P)
 
-    gamma = (BATPt * (1 + KmSt / Sout) + BATPa * (1 + KmPa / P)) / (BADPc * (1 + KmIc / I))
+    return np.array([E_t, E_p, E_c, E_a])
 
-    return gamma - 2 * (ATP / ADP)**2 * (1 + KmADPc / ADP)
+def mass_action (x, S_out, C_out, Q_0):
 
-# ============================== CONSTANTS & PARAMETERS ==============================
+    S_in, I, P = 10**x
+    C_in = Q_0 - S_in
 
-T = 30 # temperature [C]
-T = T + 273.15 # temperature [K]
-R = 8.31 / 1e3 # gas constant [kJ/(K.mol)]
-RT = R * T # [J/mol]
+    Gamma_t = S_in * C_out / (S_out * C_in)
+    Gamma_p = I / (S_in * Pi)
+    Gamma_c = P * ATP / (I * ADP)
 
-KmSt, KmATPt, KmIc, KmADPc, KmPa, KmATPa = 50e-6, 0.1e-3, 0.5e-3, 0.5e-3, 0.5e-3, 0.1e-3 # Michaelis constants [M]
-kt, kc, ka = 5*1/(5+1), 5, 0.1 # catalytic rate constants [1/s]
+    return np.array([Gamma_t, Gamma_p, Gamma_c])
 
-BSt, BATPt, BIc, BADPc, BPa, BATPa = KmSt/kt, KmATPt/kt, KmIc/kc, KmADPc/kc, KmPa/ka, KmATPa/ka # [M.s]
+K_mS_t, K_mC_t, K_mS_p, K_mI_c, K_mP_a = 50e-6, 0.1e-3, 0.1e-3, 0.5e-3, 0.5e-3 # [M]
+k_t, k_p, k_c, k_a = 5, 1, 5, 0.1 # [1/s]
 
-alpha_t, alpha_c, alpha_a = 1/kt, 1/kc, 1/ka # [s]
-A = alpha_t + alpha_c + alpha_a # [s]
+alpha_t, alpha_p, alpha_c, alpha_a = 1/k_t, 1/k_p, 1/k_c, 1/k_a # [s]
 
-ADP_0, Pi = 1e-12, 10e-3 # [M]
-Stot=100e-3 # [M]
+A = alpha_t + alpha_p + alpha_c + alpha_a # [s]
 
-const_hyd = np.exp(-12.1 + np.log(Pi))
+K_mPi_p, K_mI_p, K_mADP_c, K_mATP_c, K_mP_c = 0.5e-3, 0.5e-3, 0.5e-3, 0.5e-3, 0.5e-3 # [M]
+K_eq_t, K_eq_p, K_eq_c = 1, 30, 100
 
-# ============================== PLOTTING SETUP ==============================
+ATP, ADP, Pi = 5e-3, 1e-3, 50e-3 # [M]
+
+S_in_0 = 1e-12 # [M]
 
 plt.rc("font", **{"family": "sans-serif", "sans-serif": ["Helvetica"]}) # Helvetica
 plt.rc("text", usetex=True) # LaTeX
@@ -95,218 +99,130 @@ plt.rc("lines", linewidth=1, markeredgewidth=0, markersize=8)
 
 colors=sns.color_palette("deep") # color palette
 
-figure=plt.figure(figsize=(3.5, 3.5), dpi=450)
+lss=["dotted", "dashdot", "dashed", "solid"]
+alphas=[0.4, 0.6, 0.8, 1]
+labels=[r"\SI{1}{\micro\Molar}", r"\SI{10}{\micro\Molar}", r"\SI{0.1}{\milli\Molar}", r"\SI{100}{\milli\Molar}"]
 
-####################
-# Figure 3a
-####################
+figure=plt.figure(figsize=(5.25, 1.75), dpi=450)
 
-ax = plt.subplot(221)
+#----------------------------------------
+# Panel a
+#----------------------------------------
 
-Sout_vals = np.logspace(-7, -1, num=10000) # [M]
-ATP_0 = 0.1e-3 # [M]
+C_out = 1e-12 # [M]
 
-e_0, e_ss, e_diss = [], [], []
+ax = plt.subplot(131)
 
-for Sout in Sout_vals: # Enzyme Cost Minimization (ECM) + accessible Gibbs energy for each Sout
+S_out_vals = np.array([1e-6, 1e-5, 1e-4, 1e-1]) # [M]
+C_in_0_vals = np.logspace(-7, np.log10(500e-6), num=1000) # [M]
 
-    Q_0 = ADP_0 + ATP_0
+C_in_0_a = C_in_0_vals # [M] (Source Data)
+mu_a = [] # normalised growth rate for each [S]out (Source Data)
 
-    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
-    ADP = Q_0 - ATP
+for i, S_out in enumerate(S_out_vals):
 
-    e_0.append( accessible_Gibbs_energy_hyd (ATP_0, Q_0) ) # initial accessible Gibbs energy
-    e_ss.append( accessible_Gibbs_energy_hyd (ATP, Q_0) ) # steady-state accessible Gibbs energy
-    e_diss.append( e_0[-1] - e_ss[-1] ) # dissipated accessible Gibbs energy
+    mu = [] # normalised growth rate
 
-ax.plot(1e3*Sout_vals, e_0, color="0", label=r"$\mathcal{E}_0$")
-ax.plot(1e3*Sout_vals, e_ss, color="0", linestyle="dashed", label=r"$\mathcal{E}_{\mathrm{ss}}$")
-ax.fill_between(1e3*Sout_vals, e_ss, e_0, color=colors[1], edgecolor="None", alpha=0.5, label=r"$\Delta\mathcal{E}_{\mathrm{hyd}}$")
+    for C_in_0 in C_in_0_vals:
 
-ax.set_xscale("log")
-plt.xlim(1e-4, 1e2)
-plt.xticks([1e-4, 1e-2, 1e0, 1e2])
-plt.xlabel(r"[S]$_{\mathrm{out}}$ (\si{\milli\Molar})")
+        Q_0 = C_in_0 + S_in_0 # [M]
 
-plt.ylim(-0.0015, 0.0315)
-plt.yticks(np.arange(0, 0.03+0.01, 0.01))
-plt.ylabel(r"$\mathcal{E}$ (\si{\kilo\joule\per\liter})")
+        bounds = [(-12, np.log10(Q_0 - 1e-12)), (-12, -1), (-12, -1)]
+        result = differential_evolution (penalized_objective, bounds=bounds, args=(S_out, C_out, Q_0), tol=1e-14, seed=0)
 
-plt.legend(loc="upper left")
-plt.text(1e-4 * (1e2 / 1e-4)**(0.05), 0.015, r"\SI{0.1}{\milli\Molar} [ATP]$_0$", color=colors[3], va="center", fontsize=7)
-plt.title(r"\textbf{a}")
+        E = proteome (result.x, S_out, C_out, Q_0)
+        mu.append(A / np.sum(E))
 
-####################
-# Figure 3b
-####################
+    mu_a.append(mu)
 
-ax = plt.subplot(222)
+    ax.plot(1e6*C_in_0_vals, mu, color=colors[0], ls=lss[i], alpha=alphas[i], label=labels[i])
 
-Sout = 100e-3 # [M]
-ATP_0_vals = np.linspace(0.1e-3, 5e-3, num=10000) # [M]
+ax.set_xlim(0, 500)
+ax.set_xticks(np.arange(0, 500+100, 100))
+ax.set_xlabel(r"[C]$^0_{\mathrm{in}}$ (\si{\micro\Molar})")
+ax.set_ylim(-0.05, 1)
+ax.set_yticks(np.arange(0, 1+0.2, 0.2))
+ax.set_ylabel(r"$\mu / \mu_{\mathrm{max}}$")
+ax.set_title(r"\textbf{a}")
+handles, labels = ax.get_legend_handles_labels()
+handles, labels = [handles[0], handles[2], handles[1], handles[3]], [labels[0], labels[2], labels[1], labels[3]]
+ax.legend(handles, labels, alignment="left", loc="upper center", title=r"[S]$_\mathrm{out}$", ncols=2)
 
-e_0, e_ss, e_diss = [], [], []
+#----------------------------------------
+# Panel b
+#----------------------------------------
 
-for ATP_0 in ATP_0_vals: # Enzyme Cost Minimization (ECM) + accessible Gibbs energy for each ATP_0
+ax = plt.subplot(132)
 
-    Q_0 = ADP_0 + ATP_0
+labels = ["10", "100", "500"]
 
-    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
-    ADP = Q_0 - ATP
+C_in_0_vals = np.array([10e-6, 100e-6, 500e-6]) # [M]
+C_out_vals = np.logspace(-13, -1, num=1000) # [M]
 
-    e_0.append( accessible_Gibbs_energy_hyd (ATP_0, Q_0) ) # initial accessible Gibbs energy
-    e_ss.append( accessible_Gibbs_energy_hyd (ATP, Q_0) ) # steady-state accessible Gibbs energy
-    e_diss.append( e_0[-1] - e_ss[-1] ) # dissipated accessible Gibbs energy
+mu_b = [] # normalised growth rate for each [C]in0 (Source Data)
 
-ax.plot(1e3*ATP_0_vals, e_0, color="0", label=r"$\mathcal{E}_0$")
-ax.plot(1e3*ATP_0_vals, e_ss, color="0", linestyle="dashed", label=r"$\mathcal{E}_{\mathrm{ss}}$")
-ax.fill_between(1e3*ATP_0_vals, e_ss, e_0, color=colors[1], edgecolor="None", alpha=0.5, label=r"$\Delta\mathcal{E}_{\mathrm{hyd}}$")
+for i, C_in_0 in enumerate(C_in_0_vals):
 
-plt.xlim(0.1, 5)
-plt.xticks([0.1, 1, 2, 3, 4, 5])
-plt.xlabel(r"[ATP]$_0$ (\si{\milli\Molar})")
+    mu = [] # normalised growth rate
 
-plt.ylim(-0.015, 0.315)
-plt.yticks(np.arange(0, 0.3+0.1, 0.1))
+    for C_out in C_out_vals:
 
-plt.legend(loc="upper left")
-plt.text(0.1 + (5 - 0.1) * 0.05, 0.15, r"\SI{100}{\milli\Molar} [S]$_{\mathrm{out}}$", color=colors[0], va="center", fontsize=7)
-plt.title(r"\textbf{b}")
+        Q_0 = C_in_0 + S_in_0 # [M]
 
-####################
-# Figure 3c
-####################
+        bounds = [(-12, np.log10(Q_0 - 1e-12)), (-12, -1), (-12, -1)]
+        result = differential_evolution (penalized_objective, bounds=bounds, args=(S_out, C_out, Q_0), tol=1e-14, seed=0)
 
-ax = plt.subplot(223)
+        E = proteome (result.x, S_out, C_out, Q_0)
+        mu.append(A / np.sum(E))
 
-Sout_vals = np.logspace(-7, -1, num=10000) # [M]
-ATP_0 = 0.1e-3 # [M]
+    mu_b.append(mu)
 
-Et, Ec, Ea = [], [], []
-E_tot = []
-
-for Sout in Sout_vals: # Enzyme Cost Minimization (ECM) + proteome allocation for each Sout
-
-    Q_0 = ADP_0 + ATP_0
-
-    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
-    ADP = Q_0 - ATP
-
-    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP))) # ECM
-    N3 = np.sqrt(BPa * (1 + KmATPa / ATP)) # ECM
-
-    x = (Stot - Q_0) / (N2 + N3) # ECM
-
-    I = x * N2 # ECM
-    P = x * N3 # ECM
-
-    E = proteome ([Sout, I, P, ATP], Q_0) # proteome allocation
-    E_tot.append(np.sum(E))
-
-    Et.append(E[0]/E_tot[-1])
-    Ec.append(E[1]/E_tot[-1])
-    Ea.append(E[2]/E_tot[-1])
-
-ax.plot(1e3*Sout_vals, Et, color=colors[0], label=r"$E_{\mathrm{t}}$")
-ax.plot(1e3*Sout_vals, Ec, color=colors[2], label=r"$E_{\mathrm{c}}$")
-ax.plot(1e3*Sout_vals, Ea, color=colors[3], label=r"$E_{\mathrm{a}}$")
+    ax.plot(1e3*C_out_vals, mu, color=colors[2], ls=lss[i+1], alpha=alphas[i], label=labels[i])
 
 ax.set_xscale("log")
-plt.xlim(1e-4, 1e2)
-plt.xticks([1e-4, 1e-2, 1e0, 1e2])
-plt.xlabel(r"[S]$_{\mathrm{out}}$ (\si{\milli\Molar})")
+ax.set_xlim(1e-10, 1e2)
+ax.set_xticks([1e-10, 1e-6, 1e-2, 1e2])
+ax.set_xlabel(r"[C]$_{\mathrm{out}}$ (\si{\milli\Molar})")
+ax.set_ylim(-0.05, 1)
+ax.set_yticks(np.arange(0, 1+0.2, 0.2))
+ax.set_title(r"\textbf{b}")
+ax.legend(alignment="left", loc="upper center", title=r"[C]$^0_{\mathrm{in}}$ (\si{\micro\Molar})", ncols=3)
 
-plt.ylim(-0.05, 1.05)
-plt.yticks(np.arange(0, 1+0.2, 0.2))
-plt.ylabel(r"$E_r / E_{\mathrm{tot}}$")
+#----------------------------------------
+# Panel c
+#----------------------------------------
 
-plt.legend()
-plt.text(1e-4 * (1e2 / 1e-4)**(0.05), 0.9, r"\SI{0.1}{\milli\Molar} [ATP]$_0$", color=colors[3], fontsize=7)
-plt.title(r"\textbf{c}")
+ax = plt.subplot(133)
 
-left, right = ax.get_xlim()
-mid_left = left * (right / left)**(0.25)
-mid = left * (right / left)**(0.5)
-mid_right = left * (right / left)**(0.75)
+C_in_0 = 500e-6 # [M]
 
-left_val = f"{E_tot[0]:.0f}"
-mid_left_val = f"{E_tot[int(0.25*len(Sout_vals))]:.0f}"
-mid_val = f"{E_tot[int(0.5*len(Sout_vals))]:.0f}"
-mid_right_val = f"{E_tot[int(0.75*len(Sout_vals))]:.0f}"
-right_val = f"{E_tot[-1]:.0f}"
+ratio_t, ratio_p, ratio_c = [], [], []
 
-ax_top = ax.secondary_xaxis("top")
-ax_top.set_xticks([], minor=False)
-ax_top.set_xticks([left, mid_left, mid, mid_right, right], minor=True)
-ax_top.set_xticklabels([left_val, mid_left_val, mid_val, mid_right_val, right_val], minor=True)
-ax_top.tick_params(which="minor", direction="in", size=2, width=0.5)
-ax_top.set_xlabel(r"$E_{\mathrm{tot}} / J$ (\si{\second})")
+for C_out in C_out_vals:
 
-####################
-# Figure 2d
-####################
+    Q_0 = C_in_0 + S_in_0 # [M]
 
-ax = plt.subplot(224)
+    bounds = [(-12, np.log10(Q_0 - 1e-12)), (-12, -1), (-12, -1)]
+    result = differential_evolution (penalized_objective, bounds=bounds, args=(S_out, C_out, Q_0), tol=1e-14, seed=0)
 
-Sout = 100e-3 # [M]
-ATP_0_vals = np.linspace(0.1e-3, 5e-3, num=10000) # [M]
+    Gamma_t, Gamma_p, Gamma_c = mass_action (result.x, S_out, C_out, Q_0)
 
-Et, Ep, Ec, Ea = [], [], [], []
-E_tot = []
+    ratio_t.append(Gamma_t / K_eq_t)
+    ratio_p.append(Gamma_p / K_eq_p)
+    ratio_c.append(Gamma_c / K_eq_c)
 
-for ATP_0 in ATP_0_vals: # Enzyme Cost Minimization (ECM) + proteome allocation for each ATP_0
+plt.plot(1e3*C_out_vals, ratio_p, color=colors[1], label="Phosphorylation")
+plt.plot(1e3*C_out_vals, ratio_c, color=colors[2], label="Catabolism")
+plt.plot(1e3*C_out_vals, ratio_t, color=colors[0], label="Transport")
 
-    Q_0 = ADP_0 + ATP_0
+ax.set_xscale("log")
+ax.set_xlim(1e-10, 1e2)
+ax.set_xticks([1e-10, 1e-6, 1e-2, 1e2])
+ax.set_xlabel(r"[C]$_{\mathrm{out}}$ (\si{\milli\Molar})")
+ax.set_ylim(-0.05, 1)
+ax.set_yticks(np.arange(0, 1+0.2, 0.2))
+ax.set_ylabel(r"$\Gamma_r / K^\mathrm{eq}_r$")
+ax.set_title(r"\textbf{c}")
+ax.legend(loc="upper center")
 
-    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
-    ADP = Q_0 - ATP
-
-    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP))) # ECM
-    N3 = np.sqrt(BPa * (1 + KmATPa / ATP)) # ECM
-
-    x = (Stot - Q_0) / (N2 + N3) # ECM
-
-    I = x * N2 # ECM
-    P = x * N3 # ECM
-
-    E = proteome ([Sout, I, P, ATP], Q_0) # proteome allocation
-    E_tot.append(np.sum(E))
-
-    Et.append(E[0]/E_tot[-1])
-    Ec.append(E[1]/E_tot[-1])
-    Ea.append(E[2]/E_tot[-1])
-
-ax.plot(1e3*ATP_0_vals, Et, color=colors[0], label=r"$E_{\mathrm{t}}$")
-ax.plot(1e3*ATP_0_vals, Ec, color=colors[2], label=r"$E_{\mathrm{c}}$")
-ax.plot(1e3*ATP_0_vals, Ea, color=colors[3], label=r"$E_{\mathrm{a}}$")
-
-plt.xlim(0.1, 5)
-plt.xticks([0.1, 1, 2, 3, 4, 5])
-plt.xlabel(r"[ATP]$_0$ (\si{\milli\Molar})")
-
-plt.ylim(-0.05, 1.05)
-plt.yticks(np.arange(0, 1+0.2, 0.2))
-
-plt.legend()
-plt.text(0.1 + (5 - 0.1) * 0.05, 0.5, r"\SI{10}{\milli\Molar} [S]$_{\mathrm{out}}$", color=colors[0], va="center", fontsize=7)
-plt.title(r"\textbf{d}")
-
-left, right = ax.get_xlim()
-mid_left = 0.25 * (left + right)
-mid = 0.5 * (left + right)
-mid_right = 0.75 * (left + right)
-
-left_val = f"{E_tot[0]:.0f}"
-mid_left_val = f"{E_tot[int(0.25*len(Sout_vals))]:.0f}"
-mid_val = f"{E_tot[int(0.5*len(Sout_vals))]:.0f}"
-mid_right_val = f"{E_tot[int(0.75*len(Sout_vals))]:.0f}"
-right_val = f"{E_tot[-1]:.0f}"
-
-ax_top = ax.secondary_xaxis("top")
-ax_top.set_xticks([], minor=False)
-ax_top.set_xticks([left, mid_left, mid, mid_right, right], minor=True)
-ax_top.set_xticklabels([left_val, mid_left_val, mid_val, mid_right_val, right_val], minor=True)
-ax_top.tick_params(which="minor", direction="in", size=2, width=0.5)
-ax_top.set_xlabel(r"$E_{\mathrm{tot}} / J$ (\si{\second})")
-
-plt.savefig("PTS_SI.pdf")
+plt.savefig("Reversible_antiport_coupled_model.pdf")

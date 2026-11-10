@@ -5,7 +5,7 @@ ArcB kinetic characterization
 This code performs global fitting of the ornithine transcarbamoylase (ArcB) model and generates:
 
 a) ArcB_main.pdf: Figures 4b and 4c
-b) ArcB_SI.pdf: Figure S.5
+b) ArcB_SI.pdf: Figure S.7
 c) fit_report_ArcB.txt: best-fit parameters + uncertainties
 
 Data files required in the same directory: ArcB_orn.csv, ArcB_CP.csv, ArcB_cit.csv
@@ -136,13 +136,13 @@ x, res_sum_sq = [], []
 
 bounds=[(0.1e-3, 1e-3), (1e-6, 100e-6), (1e-3, 5e-3), (0.1e-3, 1e-3), (1e-3, 5e-3), (50e-3, 150e-3), (1e-6, 50e-6)]
 
-result = differential_evolution (RSS, bounds, args=(data_t_s, data), disp=True, polish=False)
+result = differential_evolution (RSS, bounds, args=(data_t_s, data), disp=True, polish=False, seed=0)
 
 op=result.x # optimized parameters
 parameters=["KmBcp", "KiBcp", "KmBorn", "KmBcit", "KiBcit", "KiBhpo4", "KBeq"]
 lp=len(parameters)
 
-indexes=np.where(res_sum_sq <= result.fun*(1+lp/(tnp-lp)*f.ppf(q=0.95, dfn=lp, dfd=tnp)))
+indexes=np.where(res_sum_sq <= result.fun*(1+lp/(tnp-lp)*f.ppf(q=0.95, dfn=lp, dfd=tnp-lp)))
 x=np.array(x)
 x=x[indexes]
 
@@ -154,7 +154,7 @@ fitting_file.write("Parameter,value,error\n")
 for i in range (lp):
     fitting_file.write("%s,%s,%s\n" % (parameters[i], str(op[i]), str(err_params[i])))
 
-#op=np.loadtxt("fit_report_ArcB.txt", delimiter=",", skiprows=1, usecols=1) # Load previously fitted parameters
+#op=np.loadtxt("fit_report_ArcB.txt", delimiter=",", skiprows=2, usecols=1) # Load previously fitted parameters
 
 # ============================== PLOTTING ==============================
 
@@ -190,6 +190,7 @@ plt.rc("legend", borderpad=0.25, columnspacing=0, fontsize=5, handletextpad=0, l
 plt.rc("lines", linewidth=1, markeredgewidth=0, markersize=8)
 
 colors=sns.color_palette("deep") # color palette
+colorsB=[colors[0], colors[1], colors[2], colors[6]] # color palette (Figure 4c)
 
 lorn=["0.25", "0.5", "0.7", "1", "5", "10"]
 lcp=["0.015", "0.075", "0.5", "1", "2.5", "5"]
@@ -224,12 +225,12 @@ plt.ylim(-0.175, 3.5)
 plt.yticks(np.arange(0, 3.5+0.5, 0.5))
 plt.ylabel(r"Citrulline concentration (\si{\milli\Molar})")
 plt.text(24, 1, r"\textbf{ArcB}", fontsize=7, ha="center")
-plt.title(r"\textbf{c}")
+plt.title(r"\textbf{b}")
 
 ax=plt.subplot(212)
 for j in range (lic[2]-1, -1, -1):
-    ax.plot(data_t_min[2][j], 1e6*data[2][j], color=colors[j], ls="None", marker=".", label="%s" % lcit[j])
-    ax.plot(model_t_min[2][j], model_orn[j], color=colors[j])
+    ax.plot(data_t_min[2][j], 1e6*data[2][j], color=colorsB[j], ls="None", marker=".", label="%s" % lcit[j])
+    ax.plot(model_t_min[2][j], model_orn[j], color=colorsB[j])
 plt.xlim(-6.25, 131.25)
 plt.xticks(np.arange(0, 125+25, 25))
 plt.xlabel("Time (min)")
@@ -238,7 +239,7 @@ plt.yticks(np.arange(0, 250+50, 50))
 plt.ylabel(r"Ornithine concentration (\si{\micro\Molar})")
 plt.legend(alignment="left", loc="upper left", ncols=4, title=r"Cit (\si{\milli\Molar})")
 plt.text(100, 12.5, r"\textbf{ArcB}", fontsize=7, ha="center")
-plt.title(r"\textbf{d}")
+plt.title(r"\textbf{c}")
 
 figure.tight_layout()
 plt.savefig("ArcB_main.pdf", transparent=True)

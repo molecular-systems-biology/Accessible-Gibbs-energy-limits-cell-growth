@@ -5,7 +5,7 @@ ArcD kinetic characterization
 This code performs global fitting of the arginine-ornithine antiporter (ArcD) model and generates:
 
 a) ArcD_main.pdf: Figures 4e and 4f
-b) ArcD_SI.pdf: Figure S.8
+b) ArcD_SI.pdf: Figure S.9
 c) fit_report_ArcD.txt: best-fit parameters + uncertainties
 
 Data file required in the same directory: ArcD.csv
@@ -88,7 +88,8 @@ for i in range (lul):
         data[i].append(1e-9*Data)
 
         sr+=7
-        tnp+=len(data[i][j])
+
+        if j<ul[i]: tnp+=len(data[i][j]) # only fitted points
 
 data_t_s=np.loadtxt(fnam, delimiter=",", usecols=3, skiprows=1, max_rows=7)
 model_t_s=np.arange(0, data_t_s[-1]+Dt, Dt)
@@ -116,13 +117,13 @@ _KmDorn=(0, 5e-3) # [M]
 
 bounds=[_kDm, _KmDarg, _KmDorn]
 
-result = differential_evolution (RSS, bounds, args=(data_t_s, data), disp=True, polish=False)
+result = differential_evolution (RSS, bounds, args=(data_t_s, data), disp=True, polish=False, seed=0)
 
 op=result.x # optimized parameters
 parameters=["kDm", "KmDarg", "KmDorn"]
 lp=len(parameters)
 
-indexes=np.where(res_sum_sq <= result.fun*(1+lp/(tnp-lp)*f.ppf(q=0.95, dfn=lp, dfd=tnp)))
+indexes=np.where(res_sum_sq <= result.fun*(1+lp/(tnp-lp)*f.ppf(q=0.95, dfn=lp, dfd=tnp-lp)))
 x=np.array(x)
 x=x[indexes]
 
@@ -165,6 +166,7 @@ plt.rc("legend", borderpad=0.25, columnspacing=0, fontsize=5, handletextpad=0, l
 plt.rc("lines", linewidth=1, markeredgewidth=0, markersize=8)
 
 colors=sns.color_palette("deep") # color palette
+colorsD=[colors[0], colors[1], colors[2], colors[6], colors[4], colors[5], colors[7]] # color palette
 
 labels=["1", "2", "5", "10", "25", "50", "100"]
 
@@ -177,8 +179,8 @@ ax.plot(data_t_s, 1e9*data[4][4], color=colors[4], ls="None", marker=".", label=
 ax.plot(model_t_s, model_n_arg_in[4][4], color=colors[4])
 plt.text(90, model_n_arg_in[4][4][-1]+0.01, r"Orn in" "\n" r"\SI{10}{\milli\Molar}", fontsize=5, ha="right")
 # 10 mM Orn in, 10 uM Arg out
-ax.plot(data_t_s, 1e9*data[4][3], color=colors[3], ls="None", marker=".", label="%s" % labels[3])
-ax.plot(model_t_s, model_n_arg_in[4][3], color=colors[3])
+ax.plot(data_t_s, 1e9*data[4][3], color=colors[6], ls="None", marker=".", label="%s" % labels[3])
+ax.plot(model_t_s, model_n_arg_in[4][3], color=colors[6])
 plt.text(90, model_n_arg_in[4][3][-1]+0.01, r"\SI{10}{\milli\Molar}", fontsize=5, ha="right")
 # 5 mM Orn in, 5 uM Arg out
 ax.plot(data_t_s, 1e9*data[3][2], color=colors[2], ls="None", marker=".", label="%s" % labels[2])
@@ -205,8 +207,8 @@ ax.plot(data_t_s, 1e9*data[1][4], color=colors[4], ls="None", marker=".")
 ax.plot(model_t_s, model_n_arg_in[1][4], color=colors[4])
 plt.text(90, model_n_arg_in[1][4][-1]+0.005, r"\SI{2.5}{\milli\Molar}", fontsize=5, ha="right")
 # 2.5 mM Orn in, 10 uM Arg out
-ax.plot(data_t_s, 1e9*data[1][3], color=colors[3], ls="None", marker=".")
-ax.plot(model_t_s, model_n_arg_in[1][3], color=colors[3])
+ax.plot(data_t_s, 1e9*data[1][3], color=colors[6], ls="None", marker=".")
+ax.plot(model_t_s, model_n_arg_in[1][3], color=colors[6])
 plt.text(90, model_n_arg_in[1][3][-1]+0.005, r"\SI{2.5}{\milli\Molar}", fontsize=5, ha="right")
 # 0.5 mM Orn in, 5 uM Arg out
 ax.plot(data_t_s, 1e9*data[0][2], color=colors[2], ls="None", marker=".")
@@ -233,8 +235,8 @@ figure=plt.figure(figsize=(4.5, 4.5), dpi=450)
 
 ax=plt.subplot(221)
 for j in range (ul[4]-1, -1, -1):
-    ax.plot(data_t_s, 1e9*data[4][j], color=colors[j], ls="None", marker=".", label="%s" % labels[j])
-    ax.plot(model_t_s, model_n_arg_in[4][j], color=colors[j])
+    ax.plot(data_t_s, 1e9*data[4][j], color=colorsD[j], ls="None", marker=".", label="%s" % labels[j])
+    ax.plot(model_t_s, model_n_arg_in[4][j], color=colorsD[j])
 plt.xlim(-4.5, 94.5)
 plt.xticks(np.arange(0, 90+15, 15))
 plt.ylim(-0.075, 1.5)
@@ -246,8 +248,8 @@ plt.text(45, 1.395, r"10 m\textsc{m} Orn in", fontsize=5, ha="center")
 
 ax=plt.subplot(222)
 for j in range (ul[3]-1, -1, -1):
-    ax.plot(data_t_s, 1e9*data[3][j], color=colors[j], ls="None", marker=".")
-    ax.plot(model_t_s, model_n_arg_in[3][j], color=colors[j])
+    ax.plot(data_t_s, 1e9*data[3][j], color=colorsD[j], ls="None", marker=".")
+    ax.plot(model_t_s, model_n_arg_in[3][j], color=colorsD[j])
 plt.xlim(-4.5, 94.5)
 plt.xticks(np.arange(0, 90+15, 15))
 plt.ylim(-0.05, 1)
@@ -258,8 +260,8 @@ plt.text(45, 0.93, r"5 m\textsc{m} Orn in", fontsize=5, ha="center")
 
 ax=plt.subplot(223)
 for j in range (ul[1]-1, -1, -1):
-    ax.plot(data_t_s, 1e9*data[1][j], color=colors[j], ls="None", marker=".")
-    ax.plot(model_t_s, model_n_arg_in[1][j], color=colors[j])
+    ax.plot(data_t_s, 1e9*data[1][j], color=colorsD[j], ls="None", marker=".")
+    ax.plot(model_t_s, model_n_arg_in[1][j], color=colorsD[j])
 plt.xlim(-4.5, 94.5)
 plt.xticks(np.arange(0, 90+15, 15))
 plt.xlabel("Time (s)")
@@ -271,8 +273,8 @@ plt.text(45, 0.651, r"2.5 m\textsc{m} Orn in", fontsize=5, ha="center")
 
 ax=plt.subplot(224)
 for j in range (ul[0]-1, -1, -1):
-    ax.plot(data_t_s, 1e9*data[0][j], color=colors[j], ls="None", marker=".")
-    ax.plot(model_t_s, model_n_arg_in[0][j], color=colors[j])
+    ax.plot(data_t_s, 1e9*data[0][j], color=colorsD[j], ls="None", marker=".")
+    ax.plot(model_t_s, model_n_arg_in[0][j], color=colorsD[j])
 plt.xlim(-4.5, 94.5)
 plt.xticks(np.arange(0, 90+15, 15))
 plt.xlabel("Time (s)")

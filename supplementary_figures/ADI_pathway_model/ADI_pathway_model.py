@@ -134,10 +134,10 @@ def SDE_woT (y, t, y0_orn_in): # system of differential equations without AAC
 
 # passive diffusion
 
-    Jco2 = 1e-3 * Pco2 * (HCO3_out - HCO3_in) * H / K_a_co2 # CO2 flux [mol/m2]
+    Jco2 = 1e3 * Pco2 * (HCO3_out - HCO3_in) * H / K_a_co2 # CO2 flux [mol/m2]
     uco2 = A * Jco2 # CO2 diffusion velocity [mol/s]
 
-    Jnh3 = 1e-3 * Pnh3 * (NH3_out - NH3_in) # NH3 flux [mol/m2]
+    Jnh3 = 1e3 * Pnh3 * (NH3_out - NH3_in) # NH3 flux [mol/m2]
     unh3 = A * Jnh3 # NH3 diffusion velocity [mol/s]
 
 # CP degradation
@@ -215,10 +215,10 @@ def SDE_wT (y, t, y0_orn_in, y0_ADP_out): # system of differential equations wit
 
 # passive diffusion
 
-    Jco2 = 1e-3 * Pco2 * (HCO3_out - HCO3_in) * H / K_a_co2 # CO2 flux [mol/m2]
+    Jco2 = 1e3 * Pco2 * (HCO3_out - HCO3_in) * H / K_a_co2 # CO2 flux [mol/m2]
     uco2 = A * Jco2 # CO2 diffusion velocity [mol/s]
 
-    Jnh3 = 1e-3 * Pnh3 * (NH3_out - NH3_in) # NH3 flux [mol/m2]
+    Jnh3 = 1e3 * Pnh3 * (NH3_out - NH3_in) # NH3 flux [mol/m2]
     unh3 = A * Jnh3 # NH3 diffusion velocity [mol/s]
 
 # CP degradation
@@ -307,16 +307,16 @@ KPi_tot = 50e-3 # total buffer concentration [M]
 H = 10**(-7) # H+ concentration [M]
 y0_HPO4_in = KPi_tot / (1 + H / K_a_buff) # initial HPO4 concentration [M]
 
-kDm, KmDarg, KmDorn = 87, 28.7e-6, 1.402e-3 # ArcD parameters
-kA, KmAarg, KiAarg = 6.93, 5.1e-6, 3.2e-3 # ArcA parameters
+kDm, KmDarg, KmDorn = 93, 28.5e-6, 1.40e-3 # ArcD parameters
+kA, KmAarg, KiAarg = 6.94, 5.2e-6, 3.2e-3 # ArcA parameters
 kBunfav, KmBcp, KiBcp, KmBorn, KmBcit, KiBcit, KiBhpo4, KBeq = 89/6, 0.898e-3, 1.37e-6, 1.095e-3, 0.255e-3, 3.168e-3, 109.00e-3, 13.00e-6 # ArcB parameters
-VfvC, kCm, KmCadp, KmCcp, KmCatp, KCeq = 1.50, 573, 2.54e-3, 0.618e-3, 9.5e-3, 6 # ArcC parameters
+VfvC, kCm, KmCadp, KmCcp, KmCatp, KCeq = 1.50, 573, 2.52e-3, 0.63e-3, 9.5e-3, 6 # ArcC parameters
 kTm, KmTatp = 8.5, 4.05e-6 # AAC parameters
 
 kDp = 6.0 * kDm / (kDm - 6.0) # ArcD
 kBfav = kBunfav * KmBorn * KiBcp / (KBeq * KiBhpo4 * KmBcit) # Haldane relationship (ArcB)
 kCp = 7.3e7 * VfvC / (2 * 60e3) # ArcC
-KmCcarb = kCp * KmCcp * KmCadp / (KCeq * kCm * KmCatp) # Haldane relationship (ArcC)
+KmCcarb = kCm * KCeq * KmCcp * KmCadp / (kCp * KmCatp) # Haldane relationship (ArcC)
 kTp = 1.9 * kTm / (kTm - 1.9) # AAC
 KmTadp = 2.2e-6 * (kTp + kTm) / kTm # AAC
 

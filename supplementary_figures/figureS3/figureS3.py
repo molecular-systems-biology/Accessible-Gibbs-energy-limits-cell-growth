@@ -1,58 +1,121 @@
 """
-Figure S3: Growth limitation under fixed proteome allocation.
+Figure S3: Accessible Gibbs energy limits metabolic activation in the uniport-ATP model.
 ================================================================================
 
-This code produces Figure S3 from the manuscript
-"Accessible Gibbs energy at metabolic activation limits long-term cell growth".
+This code produces panels a–d of Figure S3 from the manuscript
+"Accessible Gibbs energy at metabolic activation can constrain steady-state growth".
 
-It compares two scenarios in the antiport-coupled model at saturating 
-external substrate ([S]_out = 100 mM):
+Panels a & c: Low initial ATP ([ATP]_0 = 0.1 mM), varying external substrate [S]_out
+Panels b & d: Saturating external substrate ([S]_out = 100 mM), varying initial [ATP]_0
 
-1. Optimized proteome: enzyme levels and metabolite pools are jointly 
-   optimized for each initial countersubstrate concentration [C]_in^0.
-2. Fixed proteome: enzyme allocation is determined once at high accessible 
-   Gibbs energy ([C]_in^0 = 500 µM) and then held constant. Only metabolite 
-   reorganization is allowed.
+It computes:
+1. Accessible Gibbs energy (initial, steady-state, and dissipated)
+2. Proteome allocation (fractions of E_t, E_p, E_c, E_a relative to E_tot) and total enzyme cost per flux
 """
+
+from scipy.optimize import brentq
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-def proteome (x):
+# ============================== HELPER FUNCTIONS ==============================
 
-    Sout, Cin, Sin, I, P = x
+def accessible_Gibbs_energy_uni (Sout, Sin, ATP, Q_0): # accessible Gibbs energy of uniport in kJ/l (equation S.17 in manuscript)
 
-    Et = alpha_t * ((1 + Sout / KmSt) * (1 + Cin / KmCt) + (1 + Sin / KmSt) * (1 + Cout / KmCt) - 1) / (Sout / KmSt * Cin / KmCt )
-    Ep = alpha_p * (KmSp + Sin) / Sin
-    Ec = alpha_c * (KmIc + I) / I
-    Ea = alpha_a * (KmPa + P) / P
+    xi_max = min(max(0, Sout - Sin), max(0, Stot - Q_0 - Sin), max(0, ATP - Sin))
+
+    return RT * (xi_max * (np.log(Sout / (Sin + xi_max)) + 1) + Sin * np.log(Sin / (Sin + xi_max))) # [kJ/l]
+
+def accessible_Gibbs_energy_hyd (ATP, Q_0): # accessible Gibbs energy of ATP hydrolysis in kJ/l (equation S.19 in manuscript)
+
+    ADP = Q_0 - ATP
+
+    return RT * (Q_0 * np.log((1 + const_hyd) / Q_0) + ATP * np.log(ATP / const_hyd) + ADP * np.log(ADP)) # [kJ/l]
+
+def proteome (x, Q_0): # E_r / J for given metabolite concentrations
+
+    Sout, Sin, I, P, ATP = x
+
+    ADP = Q_0 - ATP
+
+    Et = alpha_t * (KmSt + Sout + Sin) / (Sout - Sin)
+    Ep = alpha_p * (KmATPp + ATP) / ATP * (KmSp + Sin) / Sin
+    Ec = alpha_c * ((KmADPc + ADP) / ADP)**2 * (KmIc + I) / I
+    Ea = alpha_a * (KmATPa + ATP) / ATP * (KmPa + P) / P
 
     return np.array([Et, Ep, Ec, Ea])
 
-#----------------------------------------
-# parameters
-#----------------------------------------
+def Sin_from_x (x, Sout, N1): # helper function to solve an ECM problem
+
+    def TE (Sin): # transcendental equation
+        return x**(-2) - (N1 / Sin)**2 + (2 + (KmSt + 2 * Sin) / (Sout - Sin)) / (kt * (Sout - Sin)) # equation S.7 in manuscript
+
+    Sin_min = 1e-15 # [M]
+    Sin_max = 0.999 * Sout # [M]
+
+    return brentq (TE, Sin_min, Sin_max)
+
+def x_from_ATP (Sout, ATP, Q_0): # helper function to solve an ECM problem
+
+    ADP = Q_0 - ATP
+
+    N1 = np.sqrt(BSp * (1 + KmATPp / ATP))
+    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP)))
+    N3 = np.sqrt(BPa * (1 + KmATPa / ATP))
+
+    def total_pool (x):
+
+        Sin = Sin_from_x (x, Sout, N1)
+        I = x * N2
+        P = x * N3
+
+        return Stot - Q_0 - Sin - I - P
+
+    x_min = (Stot - Q_0) / (N1 + N2 + N3)
+    x_max = (Stot - Q_0) / (N2 + N3)
+
+    return brentq (total_pool, x_min, x_max)
+
+def ATP_equation (ATP, Sout, Q_0): # equation S.10 in manuscript
+
+    ADP = Q_0 - ATP
+
+    x = x_from_ATP (Sout, ATP, Q_0)
+
+    N1 = np.sqrt(BSp * (1 + KmATPp / ATP))
+    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP)))
+    N3 = np.sqrt(BPa * (1 + KmATPa / ATP))
+
+    Sin = Sin_from_x (x, Sout, N1)
+    I = x * N2
+    P = x * N3
+
+    gamma = (BATPp * (1 + KmSp / Sin) + BATPa * (1 + KmPa / P)) / (BADPc * (1 + KmIc / I))
+
+    return gamma - 2 * (ATP / ADP)**2 * (1 + KmADPc / ADP)
+
+# ============================== CONSTANTS & PARAMETERS ==============================
 
 T = 30 # temperature [C]
 T = T + 273.15 # temperature [K]
 R = 8.31 / 1e3 # gas constant [kJ/(K.mol)]
-RT = R * T # [J/mol]
+RT = R * T # [kJ/mol]
 
-KmSt, KmCt, KmSp, KmIc, KmPa = 50e-6, 0.1e-3, 0.1e-3, 0.5e-3, 0.5e-3 # Michaelis constants [M]
+KmSt, KmSp, KmATPp, KmIc, KmADPc, KmPa, KmATPa = 50e-6, 0.1e-3, 0.1e-3, 0.5e-3, 0.5e-3, 0.5e-3, 0.1e-3 # Michaelis constants [M]
 kt, kp, kc, ka = 5, 1, 5, 0.1 # catalytic rate constants [1/s]
 
-BSt, BCt, BSp, BIc, BPa = KmSt/kt, KmCt/kt, KmSp/kp, KmIc/kc, KmPa/ka # [M.s]
+BSt, BSp, BATPp, BIc, BADPc, BPa, BATPa = KmSt/kt, KmSp/kp, KmATPp/kp, KmIc/kc, KmADPc/kc, KmPa/ka, KmATPa/ka # [M.s]
 
 alpha_t, alpha_p, alpha_c, alpha_a = 1/kt, 1/kp, 1/kc, 1/ka # [s]
 A = alpha_t + alpha_p + alpha_c + alpha_a # [s]
 
-Cout, Sin_0 = 1e-12, 1e-12 # [M]
+ADP_0, Sin_0, Pi = 1e-12, 1e-12, 10e-3 # [M]
 Stot = 100e-3 # [M]
 
-#----------------------------------------
-# plotting
-#----------------------------------------
+const_hyd = np.exp(-12.1 + np.log(Pi))
+
+# ============================== PLOTTING SETUP ==============================
 
 plt.rc("font", **{"family": "sans-serif", "sans-serif": ["Helvetica"]}) # Helvetica
 plt.rc("text", usetex=True) # LaTeX
@@ -71,81 +134,264 @@ plt.rc("lines", linewidth=1, markeredgewidth=0, markersize=8)
 
 colors=sns.color_palette("deep") # color palette
 
-figure=plt.figure(figsize=(1.75, 1.75), dpi=450)
+source = {} # plotted data of each panel (Source Data)
 
-ax = plt.subplot()
+figure=plt.figure(figsize=(3.5, 3.5), dpi=450)
 
-#--------------------------------------------------
-# high Q_0 reference (saturating Sout)
-#--------------------------------------------------
+####################
+# Panel a
+####################
 
-Sout_high = 100e-3 # [M]
+ax = plt.subplot(221)
 
-Q_0_high = 500e-6 + Sin_0 # [M]
+Sout_vals = np.logspace(-7, -1, num=10000) # [M]
+ATP_0 = 0.1e-3 # [M]
 
-I = (Stot - Q_0_high) * np.sqrt(BIc) / (np.sqrt(BIc) + np.sqrt(BPa))
-P = (Stot - Q_0_high) * np.sqrt(BPa) / (np.sqrt(BIc) + np.sqrt(BPa))
+e_0_uni, e_0_hyd = [], []
+e_ss_uni, e_ss_hyd = [], []
+e_diss_uni, e_diss_hyd = [], []
 
-gamma = (1 + (KmSt / Sout_high) * (1 + Q_0_high / KmSt) * (1 + Cout / KmCt)) * BCt / BSp
-Cin = Q_0_high / (1 + np.sqrt(1/gamma))
-Sin = Q_0_high / (1 + np.sqrt(gamma))
+for Sout in Sout_vals: # Enzyme Cost Minimization (ECM) + accessible Gibbs energy for each Sout
 
-E_fixed = proteome ([Sout_high, Cin, Sin, I, P])
-E_tot_fixed = np.sum(E_fixed)
+    Q_0 = ADP_0 + ATP_0
 
-Cin_0_vals = np.logspace(-7, np.log10(500e-6), num=10000) # [M]
+    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
+    ADP = Q_0 - ATP # ECM
 
-mu_opt = []
-mu_fix = []
+    x = x_from_ATP (Sout, ATP, Q_0) # ECM
+    N1 = np.sqrt(BSp * (1 + KmATPp / ATP)) # ECM
+    Sin = Sin_from_x (x, Sout, N1) # ECM
 
-for Cin_0 in Cin_0_vals:
+    e_0_uni.append( accessible_Gibbs_energy_uni (Sout, Sin_0, ATP_0, Q_0) ) # initial accessible Gibbs energy
+    e_0_hyd.append( accessible_Gibbs_energy_hyd (ATP_0, Q_0) ) # initial accessible Gibbs energy
 
-# optimized case
+    e_ss_uni.append( accessible_Gibbs_energy_uni (Sout, Sin, ATP, Q_0) ) # steady-state accessible Gibbs energy
+    e_ss_hyd.append( accessible_Gibbs_energy_hyd (ATP, Q_0) ) # steady-state accessible Gibbs energy
 
-    Q_0 = Cin_0 + Sin_0
+    e_diss_uni.append( e_0_uni[-1] - e_ss_uni[-1] ) # dissipated accessible Gibbs energy
+    e_diss_hyd.append( e_0_hyd[-1] - e_ss_hyd[-1] ) # dissipated accessible Gibbs energy
 
-    I = (Stot - Q_0) * np.sqrt(BIc) / (np.sqrt(BIc) + np.sqrt(BPa))
-    P = (Stot - Q_0) * np.sqrt(BPa) / (np.sqrt(BIc) + np.sqrt(BPa))
+ax.plot(1e3*Sout_vals, e_0_uni, color="0", label=r"$\mathcal{E}_0$")
+ax.plot(1e3*Sout_vals, e_ss_uni, color="0", linestyle="dashed", label=r"$\mathcal{E}_{\mathrm{ss}}$")
+ax.fill_between(1e3*Sout_vals, e_ss_uni, e_0_uni, color=colors[0], edgecolor="None", alpha=0.5, label=r"$\Delta\mathcal{E}_{\mathrm{uni}}$")
 
-    gamma = (1 + (KmSt / Sout_high) * (1 + Q_0 / KmSt) * (1 + Cout / KmCt)) * BCt / BSp
-    Cin = Q_0 / (1 + np.sqrt(1/gamma))
-    Sin = Q_0 / (1 + np.sqrt(gamma))
+ax.plot(1e3*Sout_vals, e_0_hyd, color="0")
+ax.plot(1e3*Sout_vals, e_ss_hyd, color="0", linestyle="dashed")
+ax.fill_between(1e3*Sout_vals, e_ss_hyd, e_0_hyd, color=colors[1], edgecolor="None", alpha=0.5, label=r"$\Delta\mathcal{E}_{\mathrm{hyd}}$")
 
-    E_opt = proteome ([Sout_high, Cin, Sin, I, P])
-    E_tot_opt = np.sum(E_opt)
+source["a"] = (Sout_vals, e_0_uni, e_ss_uni, e_diss_uni, e_0_hyd, e_ss_hyd, e_diss_hyd)
 
-    mu_opt.append(A / E_tot_opt)
+ax.set_xscale("log")
+plt.xlim(1e-4, 1e2)
+plt.xticks([1e-4, 1e-2, 1e0, 1e2])
+plt.xlabel(r"[S]$_{\mathrm{out}}$ (\si{\milli\Molar})")
 
-# fixed proteome case
+plt.ylim(-0.0003, 0.0063)
+plt.yticks(np.arange(0, 0.006+0.002, 0.002))
+plt.ylabel(r"$\mathcal{E}$ (\si{\kilo\joule\per\liter})")
 
-    j_list = []
-    Cin_vals = np.linspace(1e-12, Q_0 - 1e-12, num=10000)
+plt.legend(loc="upper center", ncols=2)
+plt.text(1e-4 * (1e2 / 1e-4)**(0.05), 0.001, r"\SI{0.1}{\milli\Molar} [ATP]$_0$", color=colors[3], va="center", fontsize=7)
+plt.title(r"\textbf{a}")
 
-    for Cin in Cin_vals:
+####################
+# Panel b
+####################
 
-        Sin = Q_0 - Cin
+ax = plt.subplot(222)
 
-        j_t = E_fixed[0] * kt * ((Sout_high / KmSt) * (Cin / KmCt)) / ((1 + Sout_high / KmSt) * (1 + Cin / KmCt) + (1 + Sin / KmSt) * (1 + Cout / KmCt) - 1) # j_t = J_t / J
-        j_p = E_fixed[1] * kp * (Sin / (KmSp + Sin)) # j_p = J_p / J
-        j_c = E_fixed[2] * kc # j_c = J_c / J
-        j_a = E_fixed[3] * ka # j_a = J_a / J
+Sout = 100e-3 # [M]
+ATP_0_vals = np.linspace(0.1e-3, 5e-3, num=10000) # [M]
 
-        j = min (j_t, j_p, j_c, j_a)
-        j_list.append(j)
+e_0_uni, e_0_hyd = [], []
+e_ss_uni, e_ss_hyd = [], []
+e_diss_uni, e_diss_hyd = [], []
 
-    j_max = max(j_list)
+for ATP_0 in ATP_0_vals: # Enzyme Cost Minimization (ECM) + accessible Gibbs energy for each ATP_0
 
-    mu_fix.append(A * j_max / E_tot_fixed)
+    Q_0 = ADP_0 + ATP_0
 
-ax.plot(1e6*Cin_0_vals, mu_opt, color="k", ls="solid", label=r"Optimized proteome")
-ax.plot(1e6*Cin_0_vals, mu_fix, color="k", ls="dashed", label=r"Fixed proteome")
+    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
+    ADP = Q_0 - ATP
 
-ax.set_xlim(-25, 500)
-plt.xticks(np.arange(0, 500+100, 100))
-plt.xlabel(r"[C]$^0_{\mathrm{in}}$ (\si{\micro\Molar})")
-ax.set_ylim(-0.05, 1)
-ax.set_yticks(np.arange(0, 1+0.2, 0.2))
-ax.set_ylabel(r"$\mu / \mu_{\mathrm{max}}$")
+    x = x_from_ATP (Sout, ATP, Q_0) # ECM
+    N1 = np.sqrt(BSp * (1 + KmATPp / ATP)) # ECM
+    Sin = Sin_from_x (x, Sout, N1) # ECM
+
+    e_0_uni.append( accessible_Gibbs_energy_uni (Sout, Sin_0, ATP_0, Q_0) ) # initial accessible Gibbs energy
+    e_0_hyd.append( accessible_Gibbs_energy_hyd (ATP_0, Q_0) ) # initial accessible Gibbs energy
+
+    e_ss_uni.append( accessible_Gibbs_energy_uni (Sout, Sin, ATP, Q_0) ) # steady-state accessible Gibbs energy
+    e_ss_hyd.append( accessible_Gibbs_energy_hyd (ATP, Q_0) ) # steady-state accessible Gibbs energy
+
+    e_diss_uni.append( e_0_uni[-1] - e_ss_uni[-1] ) # dissipated accessible Gibbs energy
+    e_diss_hyd.append( e_0_hyd[-1] - e_ss_hyd[-1] ) # dissipated accessible Gibbs energy
+
+ax.plot(1e3*ATP_0_vals, e_0_uni, color="0", label=r"$\mathcal{E}_0$")
+ax.plot(1e3*ATP_0_vals, e_ss_uni, color="0", linestyle="dashed", label=r"$\mathcal{E}_{\mathrm{ss}}$")
+ax.fill_between(1e3*ATP_0_vals, e_ss_uni, e_0_uni, color=colors[0], edgecolor="None", alpha=0.5, label=r"$\Delta\mathcal{E}_{\mathrm{uni}}$")
+
+ax.plot(1e3*ATP_0_vals, e_0_hyd, color="0")
+ax.plot(1e3*ATP_0_vals, e_ss_hyd, color="0", linestyle="dashed")
+ax.fill_between(1e3*ATP_0_vals, e_ss_hyd, e_0_hyd, color=colors[1], edgecolor="None", alpha=0.5, label=r"$\Delta\mathcal{E}_{\mathrm{hyd}}$")
+
+source["b"] = (ATP_0_vals, e_0_uni, e_ss_uni, e_diss_uni, e_0_hyd, e_ss_hyd, e_diss_hyd)
+
+plt.xlim(0.1, 5)
+plt.xticks([0.1, 1, 2, 3, 4, 5])
+plt.xlabel(r"[ATP]$_0$ (\si{\milli\Molar})")
+plt.ylim(-0.012, 0.252)
+plt.yticks(np.arange(0, 0.24+0.08, 0.08))
+plt.legend(loc="upper center", ncols=2)
+plt.text(0.1 + (5 - 0.1) * 0.05, 0.14, r"\SI{100}{\milli\Molar} [S]$_{\mathrm{out}}$", color=colors[0], va="center", fontsize=7)
+plt.title(r"\textbf{b}")
+
+####################
+# Panel c
+####################
+
+ax = plt.subplot(223)
+
+Sout_vals = np.logspace(-7, -1, num=10000) # [M]
+ATP_0 = 0.1e-3 # [M]
+
+Et, Ep, Ec, Ea = [], [], [], []
+E_tot = []
+
+for Sout in Sout_vals: # Enzyme Cost Minimization (ECM) + proteome allocation for each Sout
+
+    Q_0 = ADP_0 + ATP_0
+
+    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
+    ADP = Q_0 - ATP
+
+    x = x_from_ATP (Sout, ATP, Q_0) # ECM
+
+    N1 = np.sqrt(BSp * (1 + KmATPp / ATP)) # ECM
+    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP))) # ECM
+    N3 = np.sqrt(BPa * (1 + KmATPa / ATP)) # ECM
+
+    Sin = Sin_from_x (x, Sout, N1) # ECM
+    I = x * N2 # ECM
+    P = x * N3 # ECM
+
+    E = proteome ([Sout, Sin, I, P, ATP], Q_0) # proteome allocation
+    E_tot.append(np.sum(E))
+
+    Et.append(E[0]/E_tot[-1])
+    Ep.append(E[1]/E_tot[-1])
+    Ec.append(E[2]/E_tot[-1])
+    Ea.append(E[3]/E_tot[-1])
+
+ax.plot(1e3*Sout_vals, Et, color=colors[0], label=r"$[E]_{\mathrm{t}}$")
+ax.plot(1e3*Sout_vals, Ep, color=colors[1], label=r"$[E]_{\mathrm{p}}$")
+ax.plot(1e3*Sout_vals, Ec, color=colors[2], label=r"$[E]_{\mathrm{c}}$")
+ax.plot(1e3*Sout_vals, Ea, color=colors[6], label=r"$[E]_{\mathrm{a}}$")
+
+source["c"] = (Sout_vals, Et, Ep, Ec, Ea, E_tot)
+
+ax.set_xscale("log")
+plt.xlim(1e-4, 1e2)
+plt.xticks([1e-4, 1e-2, 1e0, 1e2])
+plt.xlabel(r"[S]$_{\mathrm{out}}$ (\si{\milli\Molar})")
+
+plt.ylim(-0.05, 1.05)
+plt.yticks(np.arange(0, 1+0.2, 0.2))
+plt.ylabel(r"$[E]_r / [E]_{\mathrm{tot}}$")
+
 plt.legend()
+plt.text(1e-4 * (1e2 / 1e-4)**(0.05), 0.9, r"\SI{0.1}{\milli\Molar} [ATP]$_0$", color=colors[3], fontsize=7)
+plt.title(r"\textbf{c}")
 
-plt.savefig("Metabolite_memory_SI.pdf")
+left, right = ax.get_xlim()
+mid_left = left * (right / left)**(0.25)
+mid = left * (right / left)**(0.5)
+mid_right = left * (right / left)**(0.75)
+
+left_val = f"{E_tot[0]:.0f}"
+mid_left_val = f"{E_tot[int(0.25*len(Sout_vals))]:.0f}"
+mid_val = f"{E_tot[int(0.5*len(Sout_vals))]:.0f}"
+mid_right_val = f"{E_tot[int(0.75*len(Sout_vals))]:.0f}"
+right_val = f"{E_tot[-1]:.0f}"
+
+ax_top = ax.secondary_xaxis("top")
+ax_top.set_xticks([], minor=False)
+ax_top.set_xticks([left, mid_left, mid, mid_right, right], minor=True)
+ax_top.set_xticklabels([left_val, mid_left_val, mid_val, mid_right_val, right_val], minor=True)
+ax_top.tick_params(which="minor", direction="in", size=2, width=0.5)
+ax_top.set_xlabel(r"$[E]_{\mathrm{tot}} / J$ (\si{\second})")
+
+####################
+# Panel d
+####################
+
+ax = plt.subplot(224)
+
+Sout = 100e-3 # [M]
+ATP_0_vals = np.linspace(0.1e-3, 5e-3, num=10000) # [M]
+
+Et, Ep, Ec, Ea = [], [], [], []
+E_tot = []
+
+for ATP_0 in ATP_0_vals: # Enzyme Cost Minimization (ECM) + proteome allocation for each ATP_0
+
+    Q_0 = ADP_0 + ATP_0
+
+    ATP = brentq (ATP_equation, 0.001*Q_0, 0.999*Q_0, args=(Sout, Q_0)) # ECM
+    ADP = Q_0 - ATP
+
+    x = x_from_ATP (Sout, ATP, Q_0) # ECM
+
+    N1 = np.sqrt(BSp * (1 + KmATPp / ATP)) # ECM
+    N2 = np.sqrt(BIc * (1 + KmADPc / ADP * (2 + KmADPc / ADP))) # ECM
+    N3 = np.sqrt(BPa * (1 + KmATPa / ATP)) # ECM
+
+    Sin = Sin_from_x (x, Sout, N1) # ECM
+    I = x * N2 # ECM
+    P = x * N3 # ECM
+
+    E = proteome ([Sout, Sin, I, P, ATP], Q_0) # proteome allocation
+    E_tot.append(np.sum(E))
+
+    Et.append(E[0]/E_tot[-1])
+    Ep.append(E[1]/E_tot[-1])
+    Ec.append(E[2]/E_tot[-1])
+    Ea.append(E[3]/E_tot[-1])
+
+ax.plot(1e3*ATP_0_vals, Et, color=colors[0], label=r"$[E]_{\mathrm{t}}$")
+ax.plot(1e3*ATP_0_vals, Ep, color=colors[1], label=r"$[E]_{\mathrm{p}}$")
+ax.plot(1e3*ATP_0_vals, Ec, color=colors[2], label=r"$[E]_{\mathrm{c}}$")
+ax.plot(1e3*ATP_0_vals, Ea, color=colors[6], label=r"$[E]_{\mathrm{a}}$")
+
+source["d"] = (ATP_0_vals, Et, Ep, Ec, Ea, E_tot)
+
+plt.xlim(0.1, 5)
+plt.xticks([0.1, 1, 2, 3, 4, 5])
+plt.xlabel(r"[ATP]$_0$ (\si{\milli\Molar})")
+
+plt.ylim(-0.05, 1.05)
+plt.yticks(np.arange(0, 1+0.2, 0.2))
+
+plt.legend()
+plt.text(0.1 + (5 - 0.1) * 0.05, 0.5, r"\SI{100}{\milli\Molar} [S]$_{\mathrm{out}}$", color=colors[0], va="center", fontsize=7)
+plt.title(r"\textbf{d}")
+
+left, right = ax.get_xlim()
+mid_left = left + 0.25 * (right - left)
+mid = left + 0.5 * (right - left)
+mid_right = left + 0.75 * (right - left)
+
+left_val = f"{E_tot[0]:.0f}"
+mid_left_val = f"{E_tot[int(0.25*len(ATP_0_vals))]:.0f}"
+mid_val = f"{E_tot[int(0.5*len(ATP_0_vals))]:.0f}"
+mid_right_val = f"{E_tot[int(0.75*len(ATP_0_vals))]:.0f}"
+right_val = f"{E_tot[-1]:.0f}"
+
+ax_top = ax.secondary_xaxis("top")
+ax_top.set_xticks([], minor=False)
+ax_top.set_xticks([left, mid_left, mid, mid_right, right], minor=True)
+ax_top.set_xticklabels([left_val, mid_left_val, mid_val, mid_right_val, right_val], minor=True)
+ax_top.tick_params(which="minor", direction="in", size=2, width=0.5)
+ax_top.set_xlabel(r"$[E]_{\mathrm{tot}} / J$ (\si{\second})")
+
+plt.savefig("Uniport_ATP_SI.pdf")

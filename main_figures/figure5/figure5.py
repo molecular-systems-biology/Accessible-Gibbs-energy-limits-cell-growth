@@ -3,8 +3,8 @@ Figure 5: Dynamic intravesicular metabolite reorganization links
 the initial conditions to the resulting steady-state ATP production rate.
 ================================================================================
 
-This code produces panels a–d of Figure 5 and Figure S.11 from the manuscript
-"Accessible Gibbs energy at metabolic activation limits long-term cell growth".
+This code produces panels a–d of Figure 5 and Figure S13 from the manuscript
+"Accessible Gibbs energy at metabolic activation can constrain steady-state growth".
 """
 
 from matplotlib.lines import Line2D
@@ -213,16 +213,16 @@ KPi_tot = 50e-3 # total buffer concentration [M]
 H = 10**(-7) # H+ concentration [M]
 HPO4_in = KPi_tot / (1 + H / K_a_buff) # initial HPO4 concentration [M]
 
-kDm, KmDarg, KmDorn = 87, 28.7e-6, 1.402e-3 # ArcD parameters
-kA, KmAarg, KiAarg = 6.93, 5.1e-6, 3.2e-3 # ArcA parameters
+kDm, KmDarg, KmDorn = 93, 28.5e-6, 1.40e-3 # ArcD parameters
+kA, KmAarg, KiAarg = 6.94, 5.2e-6, 3.2e-3 # ArcA parameters
 kBunfav, KmBcp, KiBcp, KmBorn, KmBcit, KiBcit, KiBhpo4, KBeq = 89/6, 0.898e-3, 1.37e-6, 1.095e-3, 0.255e-3, 3.168e-3, 109.00e-3, 13.00e-6 # ArcB parameters
-VfvC, kCm, KmCadp, KmCcp, KmCatp, KCeq = 1.50, 573, 2.54e-3, 0.618e-3, 9.5e-3, 6 # ArcC parameters
+VfvC, kCm, KmCadp, KmCcp, KmCatp, KCeq = 1.50, 573, 2.52e-3, 0.63e-3, 9.5e-3, 6 # ArcC parameters
 kTm, KmTatp = 8.5, 4.05e-6 # AAC parameters
 
 kDp = 6.0 * kDm / (kDm - 6.0) # ArcD
 kBfav = kBunfav * KmBorn * KiBcp / (KBeq * KiBhpo4 * KmBcit) # Haldane relationship (ArcB)
 kCp = 7.3e7 * VfvC / (2 * 60e3) # ArcC
-KmCcarb = kCp * KmCcp * KmCadp / (KCeq * kCm * KmCatp) # Haldane relationship (ArcC)
+KmCcarb = kCm * KCeq * KmCcp * KmCadp / (kCp * KmCatp) # Haldane relationship (ArcC)
 kTp = 1.9 * kTm / (kTm - 1.9) # AAC
 KmTadp = 2.2e-6 * (kTp + kTm) / kTm # AAC
 
@@ -255,6 +255,8 @@ plt.rc("lines", linewidth=1, markeredgewidth=0, markersize=8)
 colors = sns.color_palette("deep")
 comp_colors = [colors[1], colors[3], colors[4], colors[5]]
 
+lss=["dotted", "dashdot", "dashed", "solid"]
+
 compositions = [
     (1, 0, 0),
     (0, 1, 0),
@@ -278,6 +280,8 @@ figure = plt.figure(figsize=(3, 3), dpi=450)
 #----------------------------------------
 # Panel a
 #----------------------------------------
+
+labels = [r"All Orn", r"All Cit", r"All Arg", r"Equal split"]
 
 ax1 = plt.subplot(221)
 ax1.axis("off")
@@ -305,7 +309,7 @@ for (f_orn, f_cit, f_arg) in compositions:
     sols.append(sol)
 
 # steady state from all-ornithine
-orn_ss_f = sols[0][-1, 3] / Q0_traj
+orn_ss_f = sols[0][-1, 4] / Q0_traj
 cit_ss_f = sols[0][-1, 1] / Q0_traj
 arg_ss_f = 1 - orn_ss_f - cit_ss_f
 
@@ -343,15 +347,18 @@ for c_idx, clr in enumerate(reversed(comp_colors)):
 
     x_t, y_t = traj[true_idx]
 
-    ax1.plot(x_t, y_t, color=clr)
+    ax1.plot(x_t, y_t, color=clr, label=labels[true_idx])
 
     if true_idx != 1:
         mid = len(x_t) // den[true_idx]
         ax1.annotate("", xy=(x_t[mid+1], y_t[mid+1]), xytext=(x_t[mid], y_t[mid]), arrowprops=dict(arrowstyle="->", color=clr, lw=1, shrinkA=0, shrinkB=0))
     ax1.plot(x_t[0], y_t[0], color=clr, ls="None", marker=".", zorder=100)
 
-ax1.annotate(r"Metabolite space", xy=(0.5, -0.05), xytext=(0.5, -0.35), ha="center", fontsize=7, arrowprops=dict(arrowstyle="->", lw=0.5, shrinkA=0, shrinkB=0))
-plt.text(-0.25, 0.75, r"$Q_0 = \SI{0.5}{\milli\Molar}$", fontsize=7)
+handles, labels = ax1.get_legend_handles_labels()
+handles, labels = [handles[1], handles[2], handles[3], handles[0]], [labels[1], labels[2], labels[3], labels[0]]
+ax1.legend(handles, labels, loc="center left", bbox_to_anchor=(-0.35, 0.75))
+
+ax1.annotate(r"Metabolite space" "\n" r"$Q_0 = \SI{0.5}{\milli\Molar}$", xy=(0.5, -0.05), xytext=(0.5, -0.4), ha="center", fontsize=7, arrowprops=dict(arrowstyle="->", lw=0.5, shrinkA=0, shrinkB=0))
 plt.title(r"\textbf{a}")
 
 #----------------------------------------
@@ -402,23 +409,25 @@ for Q0 in Q0_vals:
 
 for i in range(len(Q0_vals) - 1, -1, -1):
     blended = blend_with_white (colors[2], Q0_alphas[i])
-    ax3.plot(t_min_short, ArcB_velocity[i], color=blended)
-    ax3.plot(t_min_short, ArcC_velocity[i], color=blended, label=Q0_labels[i])
+    ax3.plot(t_min_short, ArcB_velocity[i], color=blended, ls=lss[i])
+    ax3.plot(t_min_short, ArcC_velocity[i], color=blended, ls=lss[i], label=Q0_labels[i])
 
 ax3.set_xlim(-1.5, 30)
 ax3.set_xticks(np.arange(0, 30+5, 5))
 ax3.set_xlabel(r"Time (\si{\minute})")
-ax3.set_ylim(-0.075, 1.5)
-ax3.set_yticks(np.arange(0, 1.5 + 0.3, 0.3))
+ax3.set_ylim(-0.1, 2.2)
+ax3.set_yticks(np.arange(0, 2 + 0.5, 0.5))
 ax3.set_ylabel(r"ArcB or ArcC velocity (\si{\milli\Molar\per\minute})")
 ax3.set_title(r"\textbf{c}")
 handles, labels = ax3.get_legend_handles_labels()
 handles, labels = [handles[3], handles[1], handles[2], handles[0]], [labels[3], labels[1], labels[2], labels[0]]
-ax3.legend(handles, labels, alignment="left", loc="lower right", title=r"$Q_0 (\si{\milli\Molar})$", ncols=2)
+ax3.legend(handles, labels, alignment="left", loc="upper center", title=r"$Q_0 (\si{\milli\Molar})$", ncols=2)
 
 #----------------------------------------
 # Panel d
 #----------------------------------------
+
+labels = [r"\SI{1}{\micro\Molar}", r"\SI{10}{\micro\Molar}", r"\SI{0.1}{\milli\Molar}", r"\SI{100}{\milli\Molar}"]
 
 ax4 = plt.subplot(224)
 
@@ -440,17 +449,22 @@ for i, arg_out in enumerate(arg_out_vals):
 
 for i in range(len(arg_out_vals) - 1, -1, -1):
     blended = blend_with_white (colors[0], Q0_alphas[i])
-    ax4.plot(1e3*Q0_range, J[i], color=blended)
+    ax4.plot(1e3*Q0_range, J[i], color=blended, ls=lss[i], label=labels[i])
 
 ax4.set_xlim(-0.5, 10)
 ax4.set_xticks(np.arange(0, 10+2, 2))
 ax4.set_xlabel(r"$Q_0$ (\si{\milli\Molar})")
-ax4.set_ylim(-0.075, 1.5)
-ax4.set_yticks(np.arange(0, 1.5 + 0.3, 0.3))
+ax4.set_ylim(-0.1, 2.2)
+ax4.set_yticks(np.arange(0, 2 + 0.5, 0.5))
 ax4.set_ylabel(r"ATP production rate (\si{\milli\Molar\per\minute})")
 ax4.set_title(r"\textbf{d}")
+handles, labels = ax4.get_legend_handles_labels()
+handles, labels = [handles[3], handles[1], handles[2], handles[0]], [labels[3], labels[1], labels[2], labels[0]]
+ax4.legend(handles, labels, alignment="left", loc="upper center", title=r"Arg out", ncols=2)
 
 plt.savefig("Figure5.pdf")
+
+labels = [r"All Orn", r"All Cit", r"All Arg", r"Equal split"]
 
 t_s_supp = np.arange(0, 10*60 + 0.1, 0.1)
 t_min_supp = t_s_supp / 60
@@ -489,7 +503,7 @@ for row, (key, ylabel) in enumerate(zip(reversed(["orn", "cit", "arg"]), reverse
             orn_t = 1e3 * sol[:, 4]
             cit_t = 1e3 * sol[:, 1]
             arg_t = 1e3 * Q0 - orn_t - cit_t
-
+    
             if key == "orn": data = orn_t
             elif key == "cit": data = cit_t
             else: data = arg_t
@@ -499,17 +513,25 @@ for row, (key, ylabel) in enumerate(zip(reversed(["orn", "cit", "arg"]), reverse
                 ax.set_ylabel(ylabel)
                 ax.set_xlim(0, 0.5)
                 ax.set_xticks(np.arange(0, 0.5+0.1, 0.1))
+                if c_idx==0: ax.text(0.975, 0.45, rf"$Q_0 = {Q0_lbl} \si{{\milli\Molar}}$", transform=ax.transAxes, ha="right", va="center", fontsize=7)
 
             else:
-                ax.plot(t_min_supp, data, color=clr)
+                if row==0:
+                    ax.plot(t_min_supp, data, color=clr, label=labels[c_idx])
+                    if c_idx==3:
+                        handles, labels = ax.get_legend_handles_labels()
+                        handles, labels = [handles[2], handles[1], handles[0], handles[3]], [labels[2], labels[1], labels[0], labels[3]]
+                        ax.legend(handles, labels)
+                else:
+                    ax.plot(t_min_supp, data, color=clr)
                 ax.set_xlim(0, 10)
                 ax.set_xticks(np.arange(0, 10+2, 2))
+                if c_idx==0: ax.text(0.975, 0.2, rf"$Q_0 = {Q0_lbl} \si{{\milli\Molar}}$", transform=ax.transAxes, ha="right", va="center", fontsize=7)
 
             ax.set_ylim(-0.05 * 1e3*Q0, 1.05 * 1e3*Q0)
             ax.set_yticks(np.arange(0, 1e3*Q0 + 1e3*Q0/5, 1e3*Q0/5))
 
         ax.set_title(r"\textbf{" + lbl + r"}")
-        ax.text(0.95, 0.5, rf"$Q_0 = {Q0_lbl} \si{{\milli\Molar}}$", transform=ax.transAxes, ha="right", va="center", fontsize=7)
 
         if row ==2: ax.set_xlabel(r"Time (\si{\minute})")
 

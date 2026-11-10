@@ -3,7 +3,7 @@ Figure 2: Accessible Gibbs energy limits metabolic activation in the antiport mo
 ================================================================================
 
 This code produces panels a–d of Figure 2 from the manuscript
-"Accessible Gibbs energy at metabolic activation limits long-term cell growth".
+"Accessible Gibbs energy at metabolic activation can constrain steady-state growth".
 
 Panels a & c: Low initial countersubstrate ([C]_in^0 = 10 uM), varying external substrate [S]_out
 Panels b & d: Saturating external substrate ([S]_out = 100 mM), varying initial [C]_in^0
@@ -41,7 +41,7 @@ def proteome (x): # E_r / J for given metabolite concentrations
 T = 30 # temperature [C]
 T = T + 273.15 # temperature [K]
 R = 8.31 / 1e3 # gas constant [kJ/(K.mol)]
-RT = R * T # [J/mol]
+RT = R * T # [kJ/mol]
 
 KmSt, KmCt, KmSp, KmIc, KmPa = 50e-6, 0.1e-3, 0.1e-3, 0.5e-3, 0.5e-3 # Michaelis constants [M]
 kt, kp, kc, ka = 5, 1, 5, 0.1 # catalytic rate constants [1/s]
@@ -72,6 +72,8 @@ plt.rc("legend", borderpad=0.4, columnspacing=1, fontsize=5, handletextpad=0.4, 
 plt.rc("lines", linewidth=1, markeredgewidth=0, markersize=8)
 
 colors=sns.color_palette("deep") # color palette
+
+source = {} # plotted data of each panel (Source Data)
 
 figure=plt.figure(figsize=(3.5, 3.5), dpi=450)
 
@@ -107,6 +109,8 @@ for Sout in Sout_vals: # Enzyme Cost Minimization (ECM) + accessible Gibbs energ
 ax.plot(1e3*Sout_vals, epsilon_0, color="0", label=r"$\mathcal{E}_0$")
 ax.plot(1e3*Sout_vals, epsilon_ss, color="0", linestyle="dashed", label=r"$\mathcal{E}_{\mathrm{ss}}$")
 ax.fill_between(1e3*Sout_vals, epsilon_ss, epsilon_0, color="0.85", edgecolor="None", label=r"$\Delta\mathcal{E}$")
+
+source["a"] = (Sout_vals, epsilon_0, epsilon_ss, epsilon_diss)
 
 ax.set_xscale("log")
 plt.xlim(1e-4, 1e2)
@@ -156,6 +160,8 @@ ax.plot(1e6*Cin_0_vals, epsilon_0, color="0", label=r"$\mathcal{E}_0$")
 ax.plot(1e6*Cin_0_vals, epsilon_ss, color="0", linestyle="dashed", label=r"$\mathcal{E}_{\mathrm{ss}}$")
 ax.fill_between(1e6*Cin_0_vals, epsilon_ss, epsilon_0, color="0.85", edgecolor="None", label=r"$\Delta\mathcal{E}$")
 
+source["b"] = (Cin_0_vals, epsilon_0, epsilon_ss, epsilon_diss)
+
 plt.xlim(10, 500)
 plt.xticks([10, 100, 200, 300, 400, 500])
 plt.xlabel(r"[C]$^0_{\mathrm{in}}$ (\si{\micro\Molar})")
@@ -200,10 +206,12 @@ for Sout in Sout_vals: # Enzyme Cost Minimization (ECM) + proteome allocation fo
     Ec.append(E[2]/E_tot[-1])
     Ea.append(E[3]/E_tot[-1])
 
-ax.plot(1e3*Sout_vals, Et, color=colors[0], label=r"$E_{\mathrm{t}}$")
-ax.plot(1e3*Sout_vals, Ep, color=colors[1], label=r"$E_{\mathrm{p}}$")
-ax.plot(1e3*Sout_vals, Ec, color=colors[2], label=r"$E_{\mathrm{c}}$")
-ax.plot(1e3*Sout_vals, Ea, color=colors[3], label=r"$E_{\mathrm{a}}$")
+ax.plot(1e3*Sout_vals, Et, color=colors[0], label=r"$[E]_{\mathrm{t}}$")
+ax.plot(1e3*Sout_vals, Ep, color=colors[1], label=r"$[E]_{\mathrm{p}}$")
+ax.plot(1e3*Sout_vals, Ec, color=colors[2], label=r"$[E]_{\mathrm{c}}$")
+ax.plot(1e3*Sout_vals, Ea, color=colors[6], label=r"$[E]_{\mathrm{a}}$")
+
+source["c"] = (Sout_vals, Et, Ep, Ec, Ea, E_tot)
 
 ax.set_xscale("log")
 plt.xlim(1e-4, 1e2)
@@ -212,7 +220,7 @@ plt.xlabel(r"[S]$_{\mathrm{out}}$ (\si{\milli\Molar})")
 
 plt.ylim(-0.05, 1.05)
 plt.yticks(np.arange(0, 1+0.2, 0.2))
-plt.ylabel(r"$E_r / E_{\mathrm{tot}}$")
+plt.ylabel(r"$[E]_r / [E]_{\mathrm{tot}}$")
 
 plt.legend()
 plt.text(1e-4 * (1e2 / 1e-4)**(0.05), 1, r"\SI{10}{\micro\Molar} [C]$^0_{\mathrm{in}}$", color=colors[3], va="top", fontsize=7)
@@ -234,7 +242,7 @@ ax_top.set_xticks([], minor=False)
 ax_top.set_xticks([left, mid_left, mid, mid_right, right], minor=True)
 ax_top.set_xticklabels([left_val, mid_left_val, mid_val, mid_right_val, right_val], minor=True)
 ax_top.tick_params(which="minor", direction="in", size=2, width=0.5)
-ax_top.set_xlabel(r"$E_{\mathrm{tot}} / J$ (\si{\second})")
+ax_top.set_xlabel(r"$[E]_{\mathrm{tot}} / J$ (\si{\second})")
 
 ####################
 # Figure 2d
@@ -267,10 +275,12 @@ for Cin_0 in Cin_0_vals: # Enzyme Cost Minimization (ECM) + proteome allocation 
     Ec.append(E[2]/E_tot[-1])
     Ea.append(E[3]/E_tot[-1])
 
-ax.plot(1e6*Cin_0_vals, Et, color=colors[0], label=r"$E_{\mathrm{t}}$")
-ax.plot(1e6*Cin_0_vals, Ep, color=colors[1], label=r"$E_{\mathrm{p}}$")
-ax.plot(1e6*Cin_0_vals, Ec, color=colors[2], label=r"$E_{\mathrm{c}}$")
-ax.plot(1e6*Cin_0_vals, Ea, color=colors[3], label=r"$E_{\mathrm{a}}$")
+ax.plot(1e6*Cin_0_vals, Et, color=colors[0], label=r"$[E]_{\mathrm{t}}$")
+ax.plot(1e6*Cin_0_vals, Ep, color=colors[1], label=r"$[E]_{\mathrm{p}}$")
+ax.plot(1e6*Cin_0_vals, Ec, color=colors[2], label=r"$[E]_{\mathrm{c}}$")
+ax.plot(1e6*Cin_0_vals, Ea, color=colors[6], label=r"$[E]_{\mathrm{a}}$")
+
+source["d"] = (Cin_0_vals, Et, Ep, Ec, Ea, E_tot)
 
 plt.xlim(10, 500)
 plt.xticks([10, 100, 200, 300, 400, 500])
@@ -284,14 +294,14 @@ plt.text(10 + (500 - 10) * 0.025, 1, r"\SI{100}{\milli\Molar} [S]$_{\mathrm{out}
 plt.title(r"\textbf{d}")
 
 left, right = ax.get_xlim()
-mid_left = 0.25 * (left + right)
-mid = 0.5 * (left + right)
-mid_right = 0.75 * (left + right)
+mid_left = left + 0.25 * (right - left)
+mid = left + 0.5 * (right - left)
+mid_right = left + 0.75 * (right - left)
 
 left_val = f"{E_tot[0]:.0f}"
-mid_left_val = f"{E_tot[int(0.25*len(Sout_vals))]:.0f}"
-mid_val = f"{E_tot[int(0.5*len(Sout_vals))]:.0f}"
-mid_right_val = f"{E_tot[int(0.75*len(Sout_vals))]:.0f}"
+mid_left_val = f"{E_tot[int(0.25*len(Cin_0_vals))]:.0f}"
+mid_val = f"{E_tot[int(0.5*len(Cin_0_vals))]:.0f}"
+mid_right_val = f"{E_tot[int(0.75*len(Cin_0_vals))]:.0f}"
 right_val = f"{E_tot[-1]:.0f}"
 
 ax_top = ax.secondary_xaxis("top")
@@ -299,6 +309,6 @@ ax_top.set_xticks([], minor=False)
 ax_top.set_xticks([left, mid_left, mid, mid_right, right], minor=True)
 ax_top.set_xticklabels([left_val, mid_left_val, mid_val, mid_right_val, right_val], minor=True)
 ax_top.tick_params(which="minor", direction="in", size=2, width=0.5)
-ax_top.set_xlabel(r"$E_{\mathrm{tot}} / J$ (\si{\second})")
+ax_top.set_xlabel(r"$[E]_{\mathrm{tot}} / J$ (\si{\second})")
 
 plt.savefig("Figure2.pdf")

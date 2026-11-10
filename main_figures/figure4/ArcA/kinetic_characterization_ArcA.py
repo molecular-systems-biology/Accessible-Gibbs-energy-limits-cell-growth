@@ -5,7 +5,7 @@ ArcA kinetic characterization
 This code performs global fitting of the arginine deiminase (ArcA) kinetic model and generates:
 
 a) ArcA_main.pdf: Figure 4a
-b) ArcA_SI.pdf: Figure S.4
+b) ArcA_SI.pdf: Figure S.6
 c) fit_report_ArcA.txt: best-fit parameters + uncertainties
 
 Data files required in the same directory: ArcA_Arg*.csv (8 files)
@@ -40,7 +40,7 @@ def SDE (y, t, params): # system of differential equations
     return [-V_ArcA, V_ArcA]
 
 def SSDE (t, y0, params): # solution of the system of differential equations
-    return odeint (SDE, y0, t, args=(params,))
+    return odeint (SDE, y0, t, args=(params,), rtol=1e-10, atol=1e-15)
 
 def RSS (p, t, data): # residual sum of squares
 
@@ -101,13 +101,13 @@ _KmAarg=(0.5e-6, 50e-6) # [M]
 bounds=[_kA, _KmAarg]
 initial_guess=[10, 5e-6]
 
-result = differential_evolution (RSS, bounds, args=(data_t_s, data), disp=True, polish=True, x0=initial_guess)
+result = differential_evolution (RSS, bounds, args=(data_t_s, data), disp=True, polish=True, x0=initial_guess, seed=0)
 
 op=result.x # optimized parameters
 parameters=["kA", "KmAarg"]
 lp=len(parameters)
 
-indexes=np.where(res_sum_sq <= result.fun*(1+lp/(tnp-lp)*f.ppf(q=0.95, dfn=lp, dfd=tnp)))
+indexes=np.where(res_sum_sq <= result.fun*(1+lp/(tnp-lp)*f.ppf(q=0.95, dfn=lp, dfd=tnp-lp)))
 x=np.array(x)
 x=x[indexes]
 
